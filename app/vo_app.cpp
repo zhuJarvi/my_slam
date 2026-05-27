@@ -6,10 +6,13 @@
 #include "interface/dataset.hpp"
 #include "arg_parser.hpp"
 #include "opencv4/opencv2/opencv.hpp"
+#include "save/recorder.hpp"
 std::string dataset_dir;
 int main(int argc, char **argv){
     ArgParser ap(argc, argv);
     ap.get<std::string>("dataset_dir", dataset_dir, "dataset/EuRoC/MH_01_easy/", ArgParser::to_string);
+    std::string save_output;
+    ap.get<std::string>("save_output", save_output, "", ArgParser::to_string);
     spdlog::info("dataset_dir = {}", dataset_dir);
     my_slam::Dataset::Ptr dataset(new my_slam::Dataset(dataset_dir));
 
@@ -23,6 +26,10 @@ int main(int argc, char **argv){
     my_slam::Backend::Ptr backend(new my_slam::Backend());
     my_slam::Map::Ptr map(new my_slam::Map());
     my_slam::Viewer::Ptr viewer(new my_slam::Viewer());
+    my_slam::Recorder recorder;
+    if (!save_output.empty()) {
+        recorder.SetOutputDir(save_output);
+    }
 
     // prepare IMU stream index
     const auto &imu_all = dataset->GetIMUData();
@@ -64,4 +71,8 @@ int main(int argc, char **argv){
 
     backend->Stop();
     viewer->Close();
+    if (!save_output.empty()) {
+        spdlog::info("Saving map to {}", save_output);
+        recorder.SaveAll(map);
+    }
 }

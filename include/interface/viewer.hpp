@@ -3,7 +3,9 @@
 #define __VIEWER_HPP__
 
 #include <thread>
+#ifdef USE_PANGOLIN
 #include "pangolin/pangolin.h"
+#endif
 
 #include "common.hpp"
 #include "stereo_vo/struct_base/frame.hpp"
@@ -41,7 +43,9 @@ namespace my_slam
 
         void DrawMapPoints();
 
+    #ifdef USE_PANGOLIN
         void FollowCurrentFrame(pangolin::OpenGlRenderState &vis_camera);
+    #endif
 
         /// plot the features in current frame into an image
         cv::Mat PlotFrameImage();

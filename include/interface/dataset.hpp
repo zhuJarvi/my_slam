@@ -23,23 +23,24 @@ namespace my_slam
         {
             dataset_path_ = dataset_path;
         }
+        virtual ~Dataset() = default;
         /// 初始化，返回是否成功
-        bool Init();
+        virtual bool Init();
 
         /// create and return the next frame containing the stereo images
-        Frame::Ptr NextFrame();
+        virtual Frame::Ptr NextFrame();
 
         /// IMU data access
         typedef std::shared_ptr<IMUData> IMUDataPtr;
         const std::vector<IMUData> &GetIMUData() const { return imu_data_; }
 
         /// get camera by id
-        Camera::Ptr GetCamera(int camera_id) const
+        virtual Camera::Ptr GetCamera(int camera_id) const
         {
             return cameras_.at(camera_id);
         }
 
-    private:
+    protected:
         std::string dataset_path_;
         int current_image_index_ = 0;
         std::vector<Camera::Ptr> cameras_;

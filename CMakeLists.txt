@@ -28,10 +28,13 @@ find_package(Ceres REQUIRED)
 include_directories(${Ceres_INCLUDE_DIRS})
 link_libraries(Ceres::ceres)
 
-# pangolin
-find_package(Pangolin REQUIRED)
-include_directories(${Pangolin_INCLUDE_DIRS})
-link_libraries(${Pangolin_LIBRARIES})
+# Option to enable Pangolin-based viewer
+option(USE_PANGOLIN "Enable Pangolin viewer" ON)
+if(USE_PANGOLIN)
+    find_package(Pangolin REQUIRED)
+    include_directories(${Pangolin_INCLUDE_DIRS})
+    add_compile_definitions(USE_PANGOLIN)
+endif()
 
 # Sophus
 find_package(Sophus REQUIRED)
@@ -61,10 +64,16 @@ link_libraries(spdlog::spdlog)
 
 add_library(vo_interface SHARED
 ${CMAKE_SOURCE_DIR}/src/interface/camera.cpp
-${CMAKE_SOURCE_DIR}/src/interface/viewer.cpp
 ${CMAKE_SOURCE_DIR}/src/interface/dataset.cpp
-
 )
+
+# Add viewer only when Pangolin is enabled
+if(USE_PANGOLIN)
+    target_sources(vo_interface PRIVATE ${CMAKE_SOURCE_DIR}/src/interface/viewer.cpp)
+    target_link_libraries(vo_interface PUBLIC ${Pangolin_LIBRARIES})
+else()
+    target_sources(vo_interface PRIVATE ${CMAKE_SOURCE_DIR}/src/interface/viewer_stub.cpp)
+endif()
 
 add_library(vo_core SHARED
 ${CMAKE_SOURCE_DIR}/src/stereo_vo/frontend.cpp
