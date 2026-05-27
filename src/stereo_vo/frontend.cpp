@@ -50,7 +50,36 @@ namespace my_slam
     {
         if (last_frame_)
         {
-            current_frame_->SetPose(relative_motion_ * last_frame_->GetPose());
+            // try IMU preintegration for initial pose estimate if IMU data exists
+            double t0 = last_frame_->time_stamp_;
+            double t1 = current_frame_->time_stamp_;
+            if (t1 > t0 && !imu_buf_.empty())
+            {
+                preintegrator_.Reset(last_frame_->GetBiasAcc(), last_frame_->GetBiasGyro());
+                double prev_t = t0;
+                for (const auto &m : imu_buf_)
+                {
+                    if (m.timestamp <= t0)
+                        continue;
+                    if (m.timestamp <= t1)
+                    {
+                        double dt = m.timestamp - prev_t;
+                        if (dt > 0)
+                            preintegrator_.IntegrateMeasurement(m.acc, m.gyro, dt);
+                        prev_t = m.timestamp;
+                    }
+                }
+
+                SE3 Ti = last_frame_->GetPose();
+                SE3 dT(preintegrator_.delta_q(), preintegrator_.delta_p());
+                current_frame_->SetPose(Ti * dT);
+                current_frame_->SetVelocity(last_frame_->GetVelocity() + preintegrator_.delta_v());
+                current_frame_->SetBiases(last_frame_->GetBiasAcc(), last_frame_->GetBiasGyro());
+            }
+            else
+            {
+                current_frame_->SetPose(relative_motion_ * last_frame_->GetPose());
+            }
         }
 
         TrackLastFrame();
@@ -89,6 +118,27 @@ namespace my_slam
         // current frame is a new keyframe
         current_frame_->SetKeyFrame();
         map_->InsertKeyFrame(current_frame_);
+
+        // build and attach IMU preintegration from previous keyframe to this one
+        if (last_keyframe_ && current_frame_->time_stamp_ > last_keyframe_->time_stamp_)
+        {
+            auto keyframe_preint = std::make_shared<IMUPreintegrator>();
+            keyframe_preint->Reset(last_keyframe_->GetBiasAcc(), last_keyframe_->GetBiasGyro());
+            double prev_t = last_keyframe_->time_stamp_;
+            for (const auto &m : imu_buf_)
+            {
+                if (m.timestamp <= prev_t)
+                    continue;
+                if (m.timestamp > current_frame_->time_stamp_)
+                    break;
+                double dt = m.timestamp - prev_t;
+                if (dt > 0)
+                    keyframe_preint->IntegrateMeasurement(m.acc, m.gyro, dt);
+                prev_t = m.timestamp;
+            }
+            current_frame_->SetIMUPreintegration(keyframe_preint, last_keyframe_->keyframe_id_);
+        }
+        last_keyframe_ = current_frame_;
 
         spdlog::info("Inserted a new keyframe, id: {}, features: {}", current_frame_->id_, current_frame_->features_left_.size());
 

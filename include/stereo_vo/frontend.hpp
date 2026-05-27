@@ -13,6 +13,7 @@
 #include "opencv4/opencv2/features2d.hpp"
 
 #include "arg_parser.hpp"
+#include "stereo_vo/imu.hpp"
 
 namespace my_slam
 {
@@ -149,6 +150,15 @@ namespace my_slam
 
         // utilities
         cv::Ptr<cv::GFTTDetector> gftt_; // feature detector in opencv
+
+        // IMU buffer and preintegration
+        std::vector<IMUData> imu_buf_;
+        IMUPreintegrator preintegrator_;
+        Frame::Ptr last_keyframe_ = nullptr;
+
+    public:
+        // external input for IMU measurements
+        void AddIMU(const IMUData &d) { imu_buf_.push_back(d); }
     };
 }
 

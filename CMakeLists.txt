@@ -73,6 +73,7 @@ ${CMAKE_SOURCE_DIR}/src/stereo_vo/map.cpp
 ${CMAKE_SOURCE_DIR}/src/stereo_vo/struct_base/frame.cpp
 ${CMAKE_SOURCE_DIR}/src/stereo_vo/struct_base/feature.cpp
 ${CMAKE_SOURCE_DIR}/src/stereo_vo/struct_base/mappoint.cpp
+${CMAKE_SOURCE_DIR}/src/stereo_vo/imu.cpp
 )
 target_link_libraries(vo_core PUBLIC vo_interface)
 

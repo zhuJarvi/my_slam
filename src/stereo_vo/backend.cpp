@@ -44,7 +44,7 @@ namespace my_slam
                            Map::LandmarksType &landmarks)
     {
         // setup g2o
-        typedef g2o::BlockSolver_6_3 BlockSolverType;
+        typedef g2o::BlockSolverX BlockSolverType;
         typedef g2o::LinearSolverCSparse<BlockSolverType::PoseMatrixType>
             LinearSolverType;
         auto solver = new g2o::OptimizationAlgorithmLevenberg(
@@ -53,22 +53,27 @@ namespace my_slam
         g2o::SparseOptimizer optimizer;
         optimizer.setAlgorithm(solver);
 
-        // pose 顶点，使用Keyframe id
-        std::map<unsigned long, VertexPose *> vertices;
+        // state 顶点，使用Keyframe id
+        std::map<unsigned long, VertexNavState *> vertices;
         unsigned long max_kf_id = 0;
         for (auto &keyframe : keyframes)
         {
             auto kf = keyframe.second;
-            VertexPose *vertex_pose = new VertexPose(); // camera vertex_pose
-            vertex_pose->setId(kf->keyframe_id_);
-            vertex_pose->setEstimate(kf->GetPose());
-            optimizer.addVertex(vertex_pose);
+            VertexNavState *vertex_state = new VertexNavState();
+            NavState init;
+            init.pose_ = kf->GetPose();
+            init.vel_ = kf->GetVelocity();
+            init.ba_ = kf->GetBiasAcc();
+            init.bg_ = kf->GetBiasGyro();
+            vertex_state->setId(kf->keyframe_id_);
+            vertex_state->setEstimate(init);
+            optimizer.addVertex(vertex_state);
             if (kf->keyframe_id_ > max_kf_id)
             {
                 max_kf_id = kf->keyframe_id_;
             }
 
-            vertices.insert({kf->keyframe_id_, vertex_pose});
+            vertices.insert({kf->keyframe_id_, vertex_state});
         }
 
         // 路标顶点，使用路标id索引
@@ -82,7 +87,7 @@ namespace my_slam
         // edges
         int index = 1;
         double chi2_th = 5.991; // robust kernel 阈值
-        std::map<EdgeProjection *, Feature::Ptr> edges_and_features;
+        std::map<EdgeProjectionNavState *, Feature::Ptr> edges_and_features;
 
         for (auto &landmark : landmarks)
         {
@@ -99,14 +104,14 @@ namespace my_slam
                     continue;
 
                 auto frame = feat->frame_.lock();
-                EdgeProjection *edge = nullptr;
+                EdgeProjectionNavState *edge = nullptr;
                 if (feat->is_on_left_image_)
                 {
-                    edge = new EdgeProjection(K, left_ext);
+                    edge = new EdgeProjectionNavState(K, left_ext);
                 }
                 else
                 {
-                    edge = new EdgeProjection(K, right_ext);
+                    edge = new EdgeProjectionNavState(K, right_ext);
                 }
 
                 // 如果landmark还没有被加入优化，则新加一个顶点
@@ -127,20 +132,50 @@ namespace my_slam
                         vertices_landmarks.end())
                 {
                     edge->setId(index);
-                    edge->setVertex(0, vertices.at(frame->keyframe_id_));   // pose
+                    edge->setVertex(0, vertices.at(frame->keyframe_id_));   // state
                     edge->setVertex(1, vertices_landmarks.at(landmark_id)); // landmark
                     edge->setMeasurement(toVec2(feat->position_.pt));
                     edge->setInformation(Mat22::Identity());
                     auto rk = new g2o::RobustKernelHuber();
                     rk->setDelta(chi2_th);
                     edge->setRobustKernel(rk);
-                    edges_and_features.insert({edge, feat});
+                    edges_and_features.insert(std::make_pair(edge, feat));
                     optimizer.addEdge(edge);
                     index++;
                 }
                 else
                     delete edge;
             }
+        }
+
+        // IMU edges between consecutive keyframes
+        int imu_edge_index = index;
+        std::map<EdgeIMUPreint *, std::pair<unsigned long, unsigned long>> imu_edges;
+        for (auto it = keyframes.begin(); it != keyframes.end(); ++it)
+        {
+            auto kf = it->second;
+            if (!kf->imu_preint_ || kf->imu_prev_keyframe_id_ == 0)
+                continue;
+            auto prev_it = vertices.find(kf->imu_prev_keyframe_id_);
+            auto cur_it = vertices.find(kf->keyframe_id_);
+            if (prev_it == vertices.end() || cur_it == vertices.end())
+                continue;
+
+            auto *edge = new EdgeIMUPreint();
+            edge->setId(imu_edge_index++);
+            edge->setVertex(0, prev_it->second);
+            edge->setVertex(1, cur_it->second);
+            edge->setMeasurement(*kf->imu_preint_);
+            Mat1515 info = Mat1515::Identity();
+            Mat1515 cov = kf->imu_preint_->covariance();
+            for (int i = 0; i < 15; ++i)
+            {
+                double sigma2 = cov(i, i);
+                info(i, i) = 1.0 / (sigma2 + 1e-8);
+            }
+            edge->setInformation(info);
+            optimizer.addEdge(edge);
+            imu_edges.insert(std::make_pair(edge, std::make_pair(kf->imu_prev_keyframe_id_, kf->keyframe_id_)));
         }
 
         // do optimization and eliminate the outliers
@@ -196,7 +231,9 @@ namespace my_slam
         // Set pose and lanrmark position
         for (auto &v : vertices)
         {
-            keyframes.at(v.first)->SetPose(v.second->estimate());
+            keyframes.at(v.first)->SetPose(v.second->estimate().pose_);
+            keyframes.at(v.first)->SetVelocity(v.second->estimate().vel_);
+            keyframes.at(v.first)->SetBiases(v.second->estimate().ba_, v.second->estimate().bg_);
         }
         for (auto &v : vertices_landmarks)
         {

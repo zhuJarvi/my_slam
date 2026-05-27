@@ -4,6 +4,7 @@
 
 #include "common.hpp"
 #include "interface/camera.hpp"
+#include "stereo_vo/imu.hpp"
 #include "stereo_vo/struct_base/frame.hpp"
 
 namespace my_slam
@@ -28,6 +29,10 @@ namespace my_slam
         /// create and return the next frame containing the stereo images
         Frame::Ptr NextFrame();
 
+        /// IMU data access
+        typedef std::shared_ptr<IMUData> IMUDataPtr;
+        const std::vector<IMUData> &GetIMUData() const { return imu_data_; }
+
         /// get camera by id
         Camera::Ptr GetCamera(int camera_id) const
         {
@@ -37,8 +42,15 @@ namespace my_slam
     private:
         std::string dataset_path_;
         int current_image_index_ = 0;
-
         std::vector<Camera::Ptr> cameras_;
+        // files-based image lists (when dataset provides csv lists)
+        std::vector<std::string> image_left_paths_;
+        std::vector<std::string> image_right_paths_;
+        std::vector<double> image_left_timestamps_;
+        std::vector<double> image_right_timestamps_;
+
+        // IMU data (if available)
+        std::vector<IMUData> imu_data_;
     };
 }
 
