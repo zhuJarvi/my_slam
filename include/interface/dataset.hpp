@@ -32,7 +32,7 @@ namespace my_slam
 
         /// IMU data access
         typedef std::shared_ptr<IMUData> IMUDataPtr;
-        const std::vector<IMUData> &GetIMUData() const { return imu_data_; }
+        virtual const std::vector<IMUData> &GetIMUData() const { return imu_data_; }
 
         /// get camera by id
         virtual Camera::Ptr GetCamera(int camera_id) const

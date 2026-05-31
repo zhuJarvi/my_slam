@@ -29,7 +29,7 @@ include_directories(${Ceres_INCLUDE_DIRS})
 link_libraries(Ceres::ceres)
 
 # Option to enable Pangolin-based viewer
-option(USE_PANGOLIN "Enable Pangolin viewer" ON)
+set(USE_PANGOLIN ON CACHE BOOL "Enable Pangolin viewer" FORCE)
 if(USE_PANGOLIN)
     find_package(Pangolin REQUIRED)
     include_directories(${Pangolin_INCLUDE_DIRS})

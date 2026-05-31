@@ -11,16 +11,19 @@ namespace my_slam
     Frontend::Frontend(const ArgParser &ap)
     {
         int num_features, num_features_init, num_features_tracking, num_features_tracking_bad;
+        int num_init_landmarks;
         ap.get<int>("num_features", num_features, 150, ArgParser::to_int);
-        ap.get<int>("num_features_init", num_features_init, 50, ArgParser::to_int);
-        ap.get<int>("num_features_tracking", num_features_tracking, 100, ArgParser::to_int);
-        ap.get<int>("num_features_tracking_bad", num_features_tracking_bad, 50, ArgParser::to_int);
+        ap.get<int>("num_features_init", num_features_init, 40, ArgParser::to_int);
+        ap.get<int>("num_features_tracking", num_features_tracking, 35, ArgParser::to_int);
+        ap.get<int>("num_features_tracking_bad", num_features_tracking_bad, 15, ArgParser::to_int);
+        ap.get<int>("num_init_landmarks", num_init_landmarks, 20, ArgParser::to_int);
 
         gftt_ = cv::GFTTDetector::create(num_features, 0.01, 20);
         num_features_init_ = num_features_init;
         num_features_ = num_features;
         num_features_tracking_ = num_features_tracking;
         num_features_tracking_bad_ = num_features_tracking_bad;
+        num_init_landmarks_ = num_init_landmarks;
     }
 
     bool Frontend::AddFrame(Frame::Ptr frame)
@@ -37,8 +40,13 @@ namespace my_slam
             Track();
             break;
         case FrontendStatus::LOST:
-            Reset();
             break;
+        }
+
+        if (status_ == FrontendStatus::LOST)
+        {
+            Reset();
+            return true;
         }
 
         last_frame_ = current_frame_;
@@ -96,6 +104,8 @@ namespace my_slam
         else
         {
             status_ = FrontendStatus::LOST;
+            spdlog::warn("Tracking lost with {} inliers.", tracking_inliers_);
+            return false;
         }
 
         InsertKeyframe();
@@ -436,9 +446,16 @@ namespace my_slam
             cv::OPTFLOW_USE_INITIAL_FLOW);
 
         int num_good_pts = 0;
+        const float max_vertical_disparity = 2.0f;
+        const float min_horizontal_disparity = 0.5f;
         for (size_t i = 0; i < status.size(); ++i)
         {
-            if (status[i])
+            const float dx = std::abs(kps_left[i].x - kps_right[i].x);
+            const float dy = std::abs(kps_left[i].y - kps_right[i].y);
+            if (status[i] && dy <= max_vertical_disparity &&
+                dx > min_horizontal_disparity &&
+                kps_right[i].x >= 0.0f && kps_right[i].x < current_frame_->right_img_.cols &&
+                kps_right[i].y >= 0.0f && kps_right[i].y < current_frame_->right_img_.rows)
             {
                 cv::KeyPoint kp(kps_right[i], 7);
                 Feature::Ptr feat(new Feature(current_frame_, kp));
@@ -485,6 +502,14 @@ namespace my_slam
                 map_->InsertMapPoint(new_map_point);
             }
         }
+
+        if (cnt_init_landmarks < static_cast<size_t>(num_init_landmarks_))
+        {
+            spdlog::warn("Initial map rejected: only {} triangulated points, need at least {}.",
+                         cnt_init_landmarks, num_init_landmarks_);
+            return false;
+        }
+
         current_frame_->SetKeyFrame();
         map_->InsertKeyFrame(current_frame_);
         backend_->UpdateMap();
@@ -496,7 +521,13 @@ namespace my_slam
 
     bool Frontend::Reset()
     {
-        spdlog::info("Reset is not implemented.");
+        spdlog::warn("Frontend reset: clear tracking state and wait for reinitialization.");
+        current_frame_.reset();
+        last_frame_.reset();
+        last_keyframe_.reset();
+        tracking_inliers_ = 0;
+        relative_motion_ = SE3();
+        status_ = FrontendStatus::INITING;
         return true;
     }
 
